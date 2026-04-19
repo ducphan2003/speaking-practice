@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Persona from '@/models/Persona';
+import { getUserIdFromRequest, unauthorized } from '@/lib/auth';
 
-export async function GET() {
+export async function GET(req: Request) {
+  const userId = getUserIdFromRequest(req);
+  if (!userId) return unauthorized();
+
   await dbConnect();
   try {
     const personas = await Persona.find();

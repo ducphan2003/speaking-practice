@@ -4,7 +4,8 @@ import jwt from 'jsonwebtoken';
 import dbConnect from '@/lib/mongodb';
 import User from '@/models/User';
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+const googleClientId = (process.env.GOOGLE_CLIENT_ID || '').trim();
+const googleClient = new OAuth2Client(googleClientId);
 const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_for_development';
 
 export async function POST(req: Request) {
@@ -19,7 +20,7 @@ export async function POST(req: Request) {
     // 1. Verify Google idToken
     const ticket = await googleClient.verifyIdToken({
       idToken,
-      audience: process.env.GOOGLE_CLIENT_ID,
+      audience: googleClientId,
     });
 
     const payload = ticket.getPayload();

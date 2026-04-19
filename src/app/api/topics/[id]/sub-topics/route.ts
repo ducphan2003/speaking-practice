@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import SubTopic from '@/models/SubTopic';
+import { getUserIdFromRequest, unauthorized } from '@/lib/auth';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const userId = getUserIdFromRequest(req);
+  if (!userId) return unauthorized();
+
   await dbConnect();
   try {
     const { id } = await params;

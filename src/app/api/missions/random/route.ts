@@ -2,8 +2,12 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Mission from '@/models/Mission';
 import mongoose from 'mongoose';
+import { getUserIdFromRequest, unauthorized } from '@/lib/auth';
 
 export async function GET(req: Request) {
+  const userId = getUserIdFromRequest(req);
+  if (!userId) return unauthorized();
+
   await dbConnect();
   try {
     const { searchParams } = new URL(req.url);

@@ -10,7 +10,8 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   // Front-end yêu cầu prefix NEXT_PUBLIC_ để Next.js đưa biến Môi trường vào trình duyệt
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+  // trim(): tránh CRLF/khoảng trắng trong .env trên Windows làm sai Client ID
+  const clientId = (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
 
   const handleGoogleSuccess = async (credentialResponse: any) => {
     setLoading(true);
@@ -94,7 +95,7 @@ export default function LoginPage() {
                   <GoogleLogin
                     onSuccess={handleGoogleSuccess}
                     onError={() => setError('Popup closed or Google authentication failed')}
-                    useOneTap
+                    useOneTap={false}
                     theme="filled_black"
                     shape="pill"
                     text="continue_with"

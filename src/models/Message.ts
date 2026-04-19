@@ -16,6 +16,22 @@ export interface IMessage extends Document {
       explanation: string;
     }>;
   };
+  /** Lần luyện đọc lại (ghi âm + chấm điểm) — không ghi đè evaluation lần gửi đầu */
+  practice_reading?: {
+    evaluation: {
+      pronunciation_score: number;
+      grammar_score: number;
+      details: Array<{
+        error_type: string;
+        word: string;
+        correction: string;
+        explanation: string;
+      }>;
+    };
+    audio_url?: string;
+    transcript?: string;
+    createdAt: Date;
+  };
   createdAt: Date;
 }
 
@@ -36,6 +52,23 @@ const MessageSchema: Schema = new Schema({
         explanation: { type: String },
       },
     ],
+  },
+  practice_reading: {
+    evaluation: {
+      pronunciation_score: { type: Number },
+      grammar_score: { type: Number },
+      details: [
+        {
+          error_type: { type: String, enum: ['PRONUNCIATION', 'GRAMMAR', 'VOCAB'] },
+          word: { type: String },
+          correction: { type: String },
+          explanation: { type: String },
+        },
+      ],
+    },
+    audio_url: { type: String },
+    transcript: { type: String },
+    createdAt: { type: Date, default: Date.now },
   },
   createdAt: { type: Date, default: Date.now },
 });

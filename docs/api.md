@@ -1,18 +1,67 @@
 # Tài liệu API - English Speaking Practice App
 
-Tài liệu này đặc tả chi tiết về các hệ thống API (BE endpoint) cần được triển khai dựa trên kế hoạch `docs/plan.md`. Tất cả các API yêu cầu Auth sẽ truyền token vào Header `Authorization: Bearer <token>`.
+Tài liệu này đặc tả các endpoint backend (Next.js Route Handlers trong `src/app/api/`) và trạng thái triển khai trong codebase.
+
+**Xác thực:** Các API ghi `Require Token: Yes` cần header `Authorization: Bearer <token>` (JWT do server cấp sau đăng nhập Google).
+
+---
+
+## Quy ước trường trạng thái code
+
+Mỗi endpoint có trường **`code_status`** với một trong các giá trị sau:
+
+| Giá trị | Ý nghĩa |
+|---------|---------|
+| `có` | Đã có file route, gọi API trả về JSON theo luồng chính (kết nối DB khi cần). |
+| `có (AI mock)` | Route đã có; phần gọi LLM / chấm điểm / TTS / gợi ý nằm trong `src/lib/ai-service.ts` và hiện **chưa** nối provider thật (trả về dữ liệu giả lập). |
+| `không` | Chưa có route tương ứng trong repo (chỉ ghi trong tài liệu kế hoạch / requirement). |
+
+Đường dẫn file tham chiếu nhanh: `src/app/api/<...>/route.ts`.
+
+---
+
+## 0. Xác thực (Auth)
+
+### 0.1 Đăng nhập Google (OAuth) — cấp JWT
+
+- **Endpoint:** `/api/auth/google`
+- **Method:** `POST`
+- **Require Token:** No
+- **code_status:** `có` — `src/app/api/auth/google/route.ts`
+- **Logic:** Nhận `idToken` từ Google Sign-In, xác thực, tạo/cập nhật user trong DB, trả về JWT ký bằng `JWT_SECRET`.
+- **Request body:**
+  ```json
+  { "idToken": "<google credential JWT>" }
+  ```
+- **Response Example:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "token": "<app-jwt>",
+      "user": {
+        "_id": "...",
+        "name": "...",
+        "email": "...",
+        "avatar_url": "...",
+        "total_speaking_minutes": 0
+      }
+    }
+  }
+  ```
 
 ---
 
 ## 1. Nhóm API Chủ đề (Topics & Subtopics)
 
 ### 1.1 Lấy danh sách Topic
+
 - **Endpoint:** `/api/topics`
 - **Method:** `GET`
 - **Require Token:** Yes
-- **Logic:** Truy xuất danh sách các chủ đề chính (categories) có trong hệ thống, sắp xếp theo thứ tự `order` dành cho màn hình Trang chủ (Dashboard).
-- **Request:** 
-  - `None`
+- **code_status:** `có` — `src/app/api/topics/route.ts`
+- **Logic:** Truy xuất danh sách chủ đề, sắp xếp theo `order` (Dashboard).
+- **Request:** Không có body.
 - **Response Example:**
   ```json
   {
@@ -30,12 +79,13 @@ Tài liệu này đặc tả chi tiết về các hệ thống API (BE endpoint)
   ```
 
 ### 1.2 Lấy danh sách Sub-topics của một Topic
+
 - **Endpoint:** `/api/topics/:id/sub-topics`
 - **Method:** `GET`
 - **Require Token:** Yes
-- **Logic:** Lấy các tình huống hội thoại nhánh (sub-topics) khi user nhấn vào một category lớn ở Trang chủ.
-- **Request:** 
-  - `param:` `id` (Topic ID)
+- **code_status:** `có` — `src/app/api/topics/[id]/sub-topics/route.ts`
+- **Logic:** Lấy sub-topic thuộc `topic_id` = `:id`.
+- **Request:** `param` `id` — Topic ID.
 - **Response Example:**
   ```json
   {
@@ -56,20 +106,21 @@ Tài liệu này đặc tả chi tiết về các hệ thống API (BE endpoint)
 ## 2. Nhóm API Thiết lập (Personas & Missions)
 
 ### 2.1 Lấy danh sách Tính cách AI (Personas)
+
 - **Endpoint:** `/api/personas`
 - **Method:** `GET`
 - **Require Token:** Yes
-- **Logic:** Lấy danh sách các nhân vật mẫu (personas) để hiển thị trên tùy chọn Dropdown khi Setup Room phòng chat.
-- **Request:** 
-  - `None`
+- **code_status:** `có` — `src/app/api/personas/route.ts`
+- **Logic:** Trả về toàn bộ persona (gồm `name`, `prompt_context`, `avatar_url`, …).
 - **Response Example:**
   ```json
   {
     "success": true,
     "data": [
       {
-        "_id": "per_123...",
+        "_id": "...",
         "name": "Giám khảo IELTS nghiêm khắc",
+        "prompt_context": "...",
         "avatar_url": "https://..."
       }
     ]
@@ -77,12 +128,13 @@ Tài liệu này đặc tả chi tiết về các hệ thống API (BE endpoint)
   ```
 
 ### 2.2 Lấy ngẫu nhiên Nhiệm vụ ẩn (Missions)
+
 - **Endpoint:** `/api/missions/random`
 - **Method:** `GET`
 - **Require Token:** Yes
-- **Logic:** Lấy ngẫu nhiên 3 nhiệm vụ để giúp điều hướng cuộc trò chuyện. Phục vụ tính năng xoay vòng (nút Refresh task icon).
-- **Request:**
-  - `query:` `sub_topic_id` (Tùy chọn, dùng để query nhiệm vụ theo hoàn cảnh).
+- **code_status:** `có` — `src/app/api/missions/random/route.ts`
+- **Logic:** Lấy ngẫu nhiên tối đa 3 mission; nếu có `sub_topic_id` thì lọc theo sub-topic.
+- **Query:** `sub_topic_id` (optional).
 - **Response Example:**
   ```json
   {
@@ -91,7 +143,8 @@ Tài liệu này đặc tả chi tiết về các hệ thống API (BE endpoint)
       {
         "_id": "mis_123...",
         "content": "Negotiate a discount",
-        "content_vi": "Mặc cả để được giảm giá"
+        "content_vi": "Mặc cả để được giảm giá",
+        "difficulty": "MEDIUM"
       }
     ]
   }
@@ -102,173 +155,204 @@ Tài liệu này đặc tả chi tiết về các hệ thống API (BE endpoint)
 ## 3. Nhóm API Quản lý Cuộc Hội Thoại (Conversations)
 
 ### 3.1 Khởi tạo Phòng luyện nói
+
 - **Endpoint:** `/api/conversations`
 - **Method:** `POST`
 - **Require Token:** Yes
-- **Logic:** Tạo bản ghi mới cho một phiên hội thoại, lưu cấu hình (sub-topic, mode, persona context) để làm bối cảnh hệ thống cho AI dựa theo lựa chọn của UI Modal.
-- **Request:**
-  - `body:`
-    ```json
-    {
-      "chat_mode": "SAMPLE_TOPIC",
-      "sub_topic_id": "64b1f4...",
-      "custom_topic_name": "Booking a hotel room",
-      "persona_id": "per_123..."
-    }
-    ```
+- **code_status:** `có` — `src/app/api/conversations/route.ts`
+- **Logic:** Tạo conversation gắn `user_id` từ JWT; load persona để lưu `persona_name`, `persona_prompt_context`. `chat_mode` hợp lệ: `SAMPLE_TOPIC` | `CUSTOM_TOPIC` | `FREE_TALK` (UI có thể gửi alias `CUSTOM` → server map sang `CUSTOM_TOPIC`).
+- **Request body:**
+  ```json
+  {
+    "chat_mode": "SAMPLE_TOPIC",
+    "sub_topic_id": "64b1f4...",
+    "custom_topic_name": "Booking a hotel room",
+    "persona_id": "..."
+  }
+  ```
+- **Response:** `201` — `{ "success": true, "data": <Conversation document> }`
+
+### 3.2 Lấy chi tiết một cuộc hội thoại
+
+- **Endpoint:** `/api/conversations/:id`
+- **Method:** `GET`
+- **Require Token:** Yes
+- **code_status:** `có` — `src/app/api/conversations/[id]/route.ts`
+- **Logic:** Chỉ trả về nếu conversation thuộc user trong JWT.
 - **Response Example:**
   ```json
   {
     "success": true,
     "data": {
-      "_id": "conv_999...",
-      "status": "ACTIVE",
-      "created_at": "2026-04-19T09:30:00Z"
+      "_id": "...",
+      "user_id": "...",
+      "chat_mode": "SAMPLE_TOPIC",
+      "sub_topic_id": "...",
+      "custom_topic_name": "...",
+      "persona_id": "...",
+      "persona_name": "...",
+      "persona_prompt_context": "...",
+      "status": "ACTIVE"
     }
   }
   ```
 
-### 3.2 Kết thúc/Đóng phòng chat
+### 3.3 Cập nhật / Đóng phòng chat
+
 - **Endpoint:** `/api/conversations/:id`
 - **Method:** `PATCH`
 - **Require Token:** Yes
-- **Logic:** Chuyển đổi trạng thái `status` sang `ARCHIVED` để dừng luyện tập.
-- **Request:**
-  - `param:` `id` (Conversation ID)
-  - `body:`
-    ```json
-    { "status": "ARCHIVED" }
-    ```
+- **code_status:** `có` — `src/app/api/conversations/[id]/route.ts`
+- **Logic:** Cập nhật field (ví dụ `status: "ARCHIVED"`); chỉ owner mới được sửa.
+- **Request body (ví dụ):**
+  ```json
+  { "status": "ARCHIVED" }
+  ```
 - **Response Example:**
   ```json
-  { "success": true, "message": "Conversation archived." }
+  {
+    "success": true,
+    "message": "Conversation updated.",
+    "data": { "...": "..." }
+  }
   ```
 
 ---
 
-## 4. Nhóm API Tương tác Chat & Phân tích (Messages & AI Evaluation)
+## 4. Nhóm API Tin nhắn & Gợi ý (Messages & Hint)
 
-### 4.1 Gửi tin nhắn User & Lấy AI Reply (Dual-Transcript System)
+### 4.1 Lấy lịch sử tin nhắn trong phòng
+
 - **Endpoint:** `/api/conversations/:id/messages`
-- **Method:** `POST`
-- **Require Token:** Yes
-- **Logic:** 
-  1. FE gửi chuỗi VTT transcript thực tế (Gồm lỗi vấp, sai ngữ pháp) và audio url.
-  2. BE gọi API LLM xử lý ra "Transcript 2 chuẩn hóa" & Phân tích lỗi (Đánh giá).
-  3. Gửi Transcript 2 đó để nhờ Persona bot sinh câu trả lời chat (AI Reply).
-  4. Lưu cùng lúc nội dung User nói và nội dung AI trả lời vào db.
-- **Request:**
-  - `param:` `id` (Conversation ID)
-  - `body:`
-    ```json
-    {
-      "original_transcript": "I goes to hotel yesterday.",
-      "audio_url": "https://s3.bucket.../voice.webm"
-    }
-    ```
-- **Response Example:**
-  ```json
-  {
-    "success": true,
-    "user_message": {
-      "content": "I went to the hotel yesterday.",
-      "original_transcript": "I goes to hotel yesterday.",
-      "evaluation": {
-        "pronunciation_score": 85,
-        "grammar_score": 70,
-        "details": [{ "error_type": "GRAMMAR", "word": "goes", "correction": "went", "explanation": "Dùng sai thì ở Quá khứ đơn." }]
-      }
-    },
-    "ai_message": {
-      "content": "Oh, how was your experience staying there?",
-      "audio_url_tts": "https://s3.bucket.../ai_reply.webm"
-    }
-  }
-  ```
-
-### 4.2 Gợi ý câu trả lời (Hint AI)
-- **Endpoint:** `/api/conversations/:id/hint`
 - **Method:** `GET`
 - **Require Token:** Yes
-- **Logic:** Sử dụng History context của phòng chat và nhờ LLM sinh ra 2-3 mẫu ý tưởng/câu trả lời giúp user khi bị bí (Click vào bóng đèn vàng).
-- **Request:**
-  - `param:` `id` (Conversation ID)
-- **Response Example:**
-  ```json
-  {
-    "success": true,
-    "data": [
-      "The room was smaller than I expected.",
-      "I had a wonderful night out."
-    ]
-  }
-  ```
-
----
-
-## 5. Nhóm API Quản lý Từ vựng & Spaced Repetition (SRS)
-
-### 5.1 Lưu Từ Vựng mới (Quick Save)
-- **Endpoint:** `/api/vocabularies`
-- **Method:** `POST`
-- **Require Token:** Yes
-- **Logic:** Khi người dùng tra Pop-up dịch và nhấn "Save", lưu từ này vào Warehouse. Tạo thông số gốc cho thuật toán SRS.
-- **Request:**
-  - `body:`
-    ```json
-    {
-      "conversation_id": "conv_999...",
-      "word": "Procrastinate",
-      "meaning": "Trì hoãn",
-      "word_type": "Verb",
-      "ipa": "/prəˈkræs.tə.neɪt/",
-      "example_sentence": "I usually procrastinate on tasks."
-    }
-    ```
-- **Response Example:**
-  ```json
-  { "success": true, "data": { "_id": "voc_111..." } }
-  ```
-
-### 5.2 Lọc và Xem kho Từ Vựng
-- **Endpoint:** `/api/vocabularies`
-- **Method:** `GET`
-- **Require Token:** Yes
-- **Logic:** Lấy danh sách cho Màn hình Vocabulary Hub. Có thể search hoặc lọc theo thời gian.
-- **Request:**
-  - `query:` `search` (Search text - Optional)
+- **code_status:** `có` — `src/app/api/conversations/[id]/messages/route.ts`
+- **Logic:** Trả về mảng message của conversation (sắp xếp theo thời gian); chỉ owner.
 - **Response Example:**
   ```json
   {
     "success": true,
     "data": [
       {
-        "_id": "voc_111...",
-        "word": "Procrastinate",
-        "meaning": "Trì hoãn",
-        "srs": { "repetition_count": 0 }
+        "_id": "...",
+        "conversation_id": "...",
+        "sender": "USER",
+        "content": "...",
+        "original_transcript": "...",
+        "evaluation": { "pronunciation_score": 90, "grammar_score": 85, "details": [] }
       }
     ]
   }
   ```
 
-### 5.3 Fetch Từ vựng cho SRS Bubble
-- **Endpoint:** `/api/srs-bubble`
+### 4.2 Gửi tin nhắn User & nhận phản hồi AI (Dual-Transcript)
+
+- **Endpoint:** `/api/conversations/:id/messages`
+- **Method:** `POST`
+- **Require Token:** Yes
+- **code_status:** `có (AI mock)` — `src/app/api/conversations/[id]/messages/route.ts` + `src/lib/ai-service.ts`
+- **Logic:** Chuẩn hóa transcript, đánh giá, sinh câu trả lời AI, TTS (hiện mock), lưu 2 bản ghi message (USER + AI).
+- **Request body:**
+  ```json
+  {
+    "original_transcript": "I goes to hotel yesterday.",
+    "audio_url": "https://..."
+  }
+  ```
+- **Response:** Trả về document Mongoose `user_message`, `ai_message` (field âm thanh AI: `audio_url`).
+
+### 4.3 Gợi ý câu trả lời (Hint)
+
+- **Endpoint:** `/api/conversations/:id/hint`
 - **Method:** `GET`
 - **Require Token:** Yes
-- **Logic:** Hệ thống poll tìm kiếm xem User hiện tại có bất kỳ từ nào đạt điều kiện `next_review_date <= NOW()` hay không. Nếu có, bốc 1 từ sinh ra bài trắc nghiệm nhanh hiển thị xen kẽ màn hình chat.
-- **Request:** `None`
+- **code_status:** `có (AI mock)` — `src/app/api/conversations/[id]/hint/route.ts` + `src/lib/ai-service.ts`
 - **Response Example:**
   ```json
   {
     "success": true,
-    "data": {
-      "vocab_id": "voc_111...",
-      "word": "Procrastinate",
-      "question": "Choose the correct meaning:",
-      "options": ["Trì hoãn", "Sáng tạo", "Nỗ lực"],
-      "correct_answer": "Trì hoãn"
-    }
+    "data": "One complete sample reply in English (about 30–40 words)."
   }
   ```
-  *(Trả về `data: null` nếu không có từ vựng nào cần ôn tập hôm nay)*
+
+---
+
+## 5. Nhóm API Từ vựng & SRS
+
+### 5.1 Lưu từ vựng (Quick Save)
+
+- **Endpoint:** `/api/vocabularies`
+- **Method:** `POST`
+- **Require Token:** Yes
+- **code_status:** `có` — `src/app/api/vocabularies/route.ts`
+- **Logic:** Lưu `topic_id` (ref `topics._id`) nếu có; nếu chỉ gửi `conversation_id` mà không có `topic_id`, server suy ra topic từ `sub_topic_id` của conversation. Khi có topic hợp lệ, **upsert** bảng `user_topics` (user + topic).
+- **Request body:** `word`, `meaning`, `word_type` (bắt buộc); `ipa`, `example_sentence`, `user_note`, `conversation_id`, `topic_id`, `mastered` (tùy chọn).
+
+### 5.2 Danh sách từ vựng
+
+- **Endpoint:** `/api/vocabularies`
+- **Method:** `GET`
+- **Require Token:** Yes
+- **code_status:** `có` — `src/app/api/vocabularies/route.ts`
+- **Query:**
+  - `search` — tìm trong `word` hoặc `meaning` (optional).
+  - `conversation_id` — chỉ từ trong một phiên chat (optional).
+  - `topic_id` — lọc theo chủ đề (optional).
+  - `date_from`, `date_to` — khoảng ngày tạo (`createdAt`), định dạng ISO date (optional).
+  - `mastered` — `true` / `false` (optional).
+  - `sort` — `date_desc` (mặc định), `date_asc`, `alpha_asc`, `alpha_desc`.
+- **Response:** Mỗi phần tử populate `topic_id` (`name`, `name_vi`, …).
+
+### 5.3 Cập nhật một từ vựng
+
+- **Endpoint:** `/api/vocabularies/:id`
+- **Method:** `PATCH`
+- **Require Token:** Yes
+- **code_status:** `có` — `src/app/api/vocabularies/[id]/route.ts`
+- **Logic:** Chỉ owner; có thể đổi `word`, `meaning`, `word_type`, `ipa`, `topic_id` (hoặc `null` để bỏ), `mastered`, … Nếu gán `topic_id` mới, upsert `user_topics`.
+
+### 5.4 SRS Bubble — từ cần ôn
+
+- **Endpoint:** `/api/srs-bubble`
+- **Method:** `GET`
+- **Require Token:** Yes
+- **code_status:** `có` — `src/app/api/srs-bubble/route.ts`
+- **Logic:** Tìm một từ của user có `next_review_date <= now`, trả về object câu hỏi trắc nghiệm; không có thì `data: null`.
+
+---
+
+## 6. Tiện ích phát triển / DB (không dùng production trực tiếp)
+
+### 6.1 Seed dữ liệu mẫu
+
+- **Endpoint:** `/api/seed`
+- **Method:** `GET`
+- **Require Token:** No
+- **code_status:** `có` — `src/app/api/seed/route.ts`
+- **Logic:** Xóa và nạp lại topic, sub-topic, persona, mission mẫu (nguy hiểm nếu public).
+- **Ghi chú:** Chỉ bật trong môi trường dev / có bảo vệ (firewall, secret, v.v.).
+
+### 6.2 Kiểm tra kết nối DB
+
+- **Endpoint:** `/api/test-db`
+- **Method:** `GET`
+- **Require Token:** No
+- **code_status:** `có` — `src/app/api/test-db/route.ts`
+- **Logic:** Trả về trạng thái `mongoose.connection.readyState` và thông báo kết nối.
+
+---
+
+## Phụ lục — Tính năng đã mô tả trong requirement/plan nhưng **chưa có** `code_status: có`
+
+Các mục sau **không** có route tương ứng trong `src/app/api/` tại thời điểm cập nhật tài liệu này:
+
+| Mục | Mô tả ngắn |
+|-----|------------|
+| `DELETE /api/vocabularies/:id` | Xóa một từ khỏi kho (chưa có route). |
+| API upload audio / STT | Nhận file giọng nói hoặc URL sau upload; có thể tách khỏi `POST .../messages`. |
+| API “Luyện đọc lại” (retry pronunciation) | Luyện phát âm không tính là tin nhắn mới. |
+| Lọc vocab theo tag | Field `tag` / query `tag` (chưa có). |
+
+---
+
+*Tài liệu đồng bộ với cấu trúc route trong repo; khi thêm endpoint mới, cập nhật bảng `code_status` và phụ lục tương ứng.*
