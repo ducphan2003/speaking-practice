@@ -5,17 +5,23 @@ services:
       dockerfile: Dockerfile
     ports:
       - "3210:3210"
+    env_file:
+      - .env
     environment:
       - NODE_ENV=production
-      - MONGODB_URI=mongodb://mongo:27017/speaking-practice
+      # MONGODB_URI lấy từ .env (phải khớp user/pass với service mongo)
     restart: always
     depends_on:
       - mongo
 
   mongo:
-    image: mongo:latest
+    image: mongo:7
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     ports:
-      - "27017:27017"
+      # Port trên máy host (tránh mặc định 27017); trong mạng Docker vẫn là 27017
+      - "${MONGO_HOST_PORT}:27017"
     volumes:
       - mongo_data:/data/db
     restart: always
