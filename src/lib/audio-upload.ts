@@ -7,7 +7,7 @@ export function decodeAudioPayload(
 ): { buffer: Buffer; mimeType: string } {
   const trimmed = audioBase64.trim();
   if (trimmed.startsWith('data:')) {
-    const match = trimmed.match(/^data:([^;,]+)(?:;[^;,]*)*;base64,(.+)$/s);
+    const match = trimmed.match(/^data:([^;,]+)(?:;[^;,]*)*;base64,([\s\S]+)$/);
     if (!match) {
       throw new Error('Chuỗi audio base64 (data URL) không hợp lệ.');
     }

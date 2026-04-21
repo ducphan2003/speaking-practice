@@ -90,9 +90,13 @@ export async function GET(req: Request) {
 
 async function resolveTopicIdFromConversation(conversationId: string | undefined): Promise<string | null> {
   if (!conversationId || !mongoose.Types.ObjectId.isValid(conversationId)) return null;
-  const conv = await Conversation.findById(conversationId).lean();
+  const conv = await Conversation.findById(conversationId)
+    .lean<{ sub_topic_id?: mongoose.Types.ObjectId | null }>()
+    .exec();
   if (!conv?.sub_topic_id) return null;
-  const st = await SubTopic.findById(conv.sub_topic_id).lean();
+  const st = await SubTopic.findById(conv.sub_topic_id)
+    .lean<{ topic_id?: mongoose.Types.ObjectId | null }>()
+    .exec();
   if (!st?.topic_id) return null;
   return String(st.topic_id);
 }

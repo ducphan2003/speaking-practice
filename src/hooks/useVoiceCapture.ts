@@ -2,6 +2,23 @@
 
 import { useCallback, useRef, useState } from 'react';
 
+/** lib.dom của TS không luôn có SpeechRecognition — khai báo tối thiểu cho Web Speech API */
+type WebSpeechRecognition = EventTarget & {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((ev: WebSpeechRecognitionResultEvent) => void) | null;
+  start(): void;
+  stop(): void;
+};
+
+type WebSpeechRecognitionResultEvent = Event & {
+  results: {
+    length: number;
+    [index: number]: { [index: number]: { transcript: string } };
+  };
+};
+
 function arrayBufferToBase64(buffer: ArrayBuffer): string {
   let binary = '';
   const bytes = new Uint8Array(buffer);
@@ -48,8 +65,8 @@ export function useVoiceCapture() {
     mediaRecorderRef.current = mr;
 
     const win = window as unknown as {
-      SpeechRecognition?: new () => SpeechRecognition;
-      webkitSpeechRecognition?: new () => SpeechRecognition;
+      SpeechRecognition?: new () => WebSpeechRecognition;
+      webkitSpeechRecognition?: new () => WebSpeechRecognition;
     };
     const SR = win.SpeechRecognition ?? win.webkitSpeechRecognition;
     if (SR) {
@@ -57,7 +74,7 @@ export function useVoiceCapture() {
       rec.lang = 'en-US';
       rec.continuous = true;
       rec.interimResults = true;
-      rec.onresult = (ev: SpeechRecognitionEvent) => {
+      rec.onresult = (ev: WebSpeechRecognitionResultEvent) => {
         let full = '';
         for (let i = 0; i < ev.results.length; i++) {
           full += ev.results[i][0].transcript;

@@ -23,7 +23,9 @@ function parseStepValue(raw: unknown): AiStepConfigValue | null {
  */
 export async function getMasterConfigValue(key: string): Promise<unknown | null> {
   await dbConnect();
-  const row = await MasterConfig.findOne({ key }).lean();
+  const row = await MasterConfig.findOne({ key })
+    .lean<{ value?: unknown }>()
+    .exec();
   if (!row) return null;
   return row.value as unknown;
 }
@@ -40,7 +42,9 @@ export async function resolveGeminiModelForStep(stepKey: string): Promise<string
   }
 
   await dbConnect();
-  const row = await MasterConfig.findOne({ key: stepKey }).lean();
+  const row = await MasterConfig.findOne({ key: stepKey })
+    .lean<{ value?: unknown }>()
+    .exec();
   const parsed = parseStepValue(row?.value);
   const fromDb = typeof parsed?.model === 'string' ? parsed.model.trim() : '';
   const resolved = fromDb || getGeminiModel();
