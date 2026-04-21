@@ -14,14 +14,18 @@ services:
     depends_on:
       - mongo
 
+  # Nếu container thoát mã 62: volume /data/db được tạo bởi bản Mongo khác (vd. 8 vs 7).
+  # Cách xử lý: dùng cùng major version với dữ liệu cũ, hoặc xóa volume (mất data) rồi khởi tạo lại.
   mongo:
-    image: mongo:7
+    image: mongo:8
+    env_file:
+      - .env
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
     ports:
       # Port trên máy host (tránh mặc định 27017); trong mạng Docker vẫn là 27017
-      - "${MONGO_HOST_PORT}:27017"
+      - "${MONGO_HOST_PORT:-27018}:27017"
     volumes:
       - mongo_data:/data/db
     restart: always
