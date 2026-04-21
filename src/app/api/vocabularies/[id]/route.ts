@@ -55,7 +55,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       await upsertUserTopic(userId, newTopicId);
     }
 
-    const populated = await Vocabulary.findById(updated._id).populate('topic_id', 'name name_vi icon order');
+    const populated = await Vocabulary.findById(updated._id)
+      .populate('topic_id', 'name name_vi icon order')
+      .populate(
+      'system_vocabulary_id',
+      'word translated_text source_language target_language ipa word_type'
+    );
 
     return NextResponse.json({ success: true, data: populated });
   } catch (error: any) {

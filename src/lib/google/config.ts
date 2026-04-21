@@ -2,7 +2,9 @@
  * Cấu hình chung cho Google AI (Gemini API key) và Google Cloud (STT/TTS).
  *
  * - Gemini: tạo key tại https://aistudio.google.com/apikey
- * - Cloud Speech & TTS: tạo project GCP, bật API, tạo service account JSON
+ * - Cloud Speech, TTS & Translation: tạo project GCP, bật API, tạo service account JSON
+ *   (Translation + Natural Language: bật «Cloud Translation API» và «Cloud Natural Language API»,
+ *   cùng file JSON `GOOGLE_CLOUD_CREDENTIALS_JSON`). IPA trong tra từ dùng Gemini (GEMINI_API_KEY), không có API Google chuyên IPA.
  */
 
 import fs from 'fs';
@@ -23,7 +25,7 @@ export function getGeminiApiKey(): string {
 
 /** Model Gemini, ví dụ gemini-2.5-flash, gemini-1.5-flash */
 export function getGeminiModel(): string {
-  return (process.env.GEMINI_MODEL ?? 'gemini-2.5-flash').trim();
+  return (process.env.GEMINI_MODEL ?? 'gemini-2.5-flash-lite').trim();
 }
 
 export type GoogleServiceAccountCredentials = {

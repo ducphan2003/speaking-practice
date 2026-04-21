@@ -10,6 +10,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Pause,
+  Loader2,
   RefreshCw,
   Volume2,
 } from "lucide-react";
@@ -19,6 +20,9 @@ import { readSseResponse } from "@/lib/sse-client";
 import { cn } from "@/lib/utils";
 import { useVoiceCapture } from "@/hooks/useVoiceCapture";
 import { useInlineAudioPlayer } from "@/hooks/useInlineAudioPlayer";
+
+/** Đặt `true` khi bật lại khối «Nhiệm vụ ẩn» + gọi `/api/missions/random`. */
+const SHOW_HIDDEN_MISSIONS = false;
 
 type EvalDetail = {
   error_type?: string;
@@ -57,6 +61,8 @@ type VocabRow = {
   _id: string;
   word: string;
   meaning: string;
+  ipa?: string;
+  word_type?: string;
 };
 
 /** Chuẩn hóa _id từ API/Mongoose (string hoặc { $oid }) để so khớp tin nhắn và URL. */
@@ -86,6 +92,13 @@ function PracticeContent() {
     word: string;
     x: number;
     y: number;
+    loading: boolean;
+    meaning: string | null;
+    ipa: string | null;
+    wordType: string | null;
+    error: string | null;
+    systemVocabularyId: string | null;
+    fromCache?: boolean;
   } | null>(null);
   const [errorPopup, setErrorPopup] = useState<EvalDetail | null>(null);
   const [messages, setMessages] = useState<ApiMessage[]>([]);
@@ -132,13 +145,17 @@ function PracticeContent() {
       setPersonaName(conv.persona_name || "—");
       setChatModeLabel(conv.chat_mode || "—");
 
-      const subQ = conv.sub_topic_id
-        ? `?sub_topic_id=${encodeURIComponent(String(conv.sub_topic_id))}`
-        : "";
-      const missRes = await fetch(`/api/missions/random${subQ}`, { headers: authHeaders() });
-      const missJson = await missRes.json();
-      if (missRes.ok && missJson.success && Array.isArray(missJson.data)) {
-        setMissions(missJson.data);
+      if (SHOW_HIDDEN_MISSIONS) {
+        const subQ = conv.sub_topic_id
+          ? `?sub_topic_id=${encodeURIComponent(String(conv.sub_topic_id))}`
+          : "";
+        const missRes = await fetch(`/api/missions/random${subQ}`, { headers: authHeaders() });
+        const missJson = await missRes.json();
+        if (missRes.ok && missJson.success && Array.isArray(missJson.data)) {
+          setMissions(missJson.data);
+        }
+      } else {
+        setMissions([]);
       }
 
       const msgJson = await mRes.json();
@@ -166,7 +183,7 @@ function PracticeContent() {
   }, [loadRoom]);
 
   const onRefreshMissions = useCallback(async () => {
-    if (!conversationId) return;
+    if (!conversationId || !SHOW_HIDDEN_MISSIONS) return;
     setRefreshSpin(true);
     try {
       const cRes = await fetch(`/api/conversations/${conversationId}`, { headers: authHeaders() });
@@ -297,6 +314,10 @@ function PracticeContent() {
 
   const saveHoveredWord = async () => {
     if (!translateOpen || !conversationId) return;
+    if (translateOpen.loading || !translateOpen.meaning) {
+      alert("Đợi tra từ xong (hoặc thử bấm lại từ khác).");
+      return;
+    }
     try {
       const res = await fetch("/api/vocabularies", {
         method: "POST",
@@ -304,17 +325,26 @@ function PracticeContent() {
         body: JSON.stringify({
           conversation_id: conversationId,
           word: translateOpen.word,
-          meaning: "(Tra nhanh — cập nhật sau)",
-          word_type: "—",
-          ipa: "",
+          meaning: translateOpen.meaning,
+          word_type: translateOpen.wordType?.trim() || "—",
+          ipa: translateOpen.ipa?.trim() ?? "",
           example_sentence: "",
+          ...(translateOpen.systemVocabularyId
+            ? { system_vocabulary_id: translateOpen.systemVocabularyId }
+            : {}),
         }),
       });
       const json = await res.json();
       if (json.success) {
         setSessionVocab((prev) => [
           ...prev,
-          { _id: String(json.data._id), word: translateOpen.word, meaning: "(Tra nhanh)" },
+          {
+            _id: String(json.data._id),
+            word: translateOpen.word,
+            meaning: translateOpen.meaning ?? "",
+            ...(translateOpen.ipa ? { ipa: translateOpen.ipa } : {}),
+            ...(translateOpen.wordType ? { word_type: translateOpen.wordType } : {}),
+          },
         ]);
       }
       setTranslateOpen(null);
@@ -379,35 +409,37 @@ function PracticeContent() {
               </p>
             </div>
 
-            <div className="rounded-2xl border border-border/80 bg-muted/30 px-4 py-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Nhiệm vụ ẩn
-                </span>
-                <button
-                  type="button"
-                  onClick={onRefreshMissions}
-                  className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-1 text-xs font-medium hover:bg-muted"
-                >
-                  <RefreshCw
-                    className={cn("h-3.5 w-3.5", refreshSpin && "animate-spin-once")}
-                  />
-                  Làm mới
-                </button>
+            {SHOW_HIDDEN_MISSIONS && (
+              <div className="rounded-2xl border border-border/80 bg-muted/30 px-4 py-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Nhiệm vụ ẩn
+                  </span>
+                  <button
+                    type="button"
+                    onClick={onRefreshMissions}
+                    className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-1 text-xs font-medium hover:bg-muted"
+                  >
+                    <RefreshCw
+                      className={cn("h-3.5 w-3.5", refreshSpin && "animate-spin-once")}
+                    />
+                    Làm mới
+                  </button>
+                </div>
+                <ul className="space-y-2">
+                  {missions.length === 0 ? (
+                    <li className="text-sm text-muted-foreground">Chưa có nhiệm vụ — thử làm mới hoặc seed DB.</li>
+                  ) : (
+                    missions.map((m) => (
+                      <li key={m._id} className="flex items-start gap-2 text-sm">
+                        <input type="checkbox" readOnly className="mt-0.5 rounded border-border" />
+                        <span>{m.content_vi || m.content}</span>
+                      </li>
+                    ))
+                  )}
+                </ul>
               </div>
-              <ul className="space-y-2">
-                {missions.length === 0 ? (
-                  <li className="text-sm text-muted-foreground">Chưa có nhiệm vụ — thử làm mới hoặc seed DB.</li>
-                ) : (
-                  missions.map((m) => (
-                    <li key={m._id} className="flex items-start gap-2 text-sm">
-                      <input type="checkbox" readOnly className="mt-0.5 rounded border-border" />
-                      <span>{m.content_vi || m.content}</span>
-                    </li>
-                  ))
-                )}
-              </ul>
-            </div>
+            )}
           </header>
 
           <div className="relative flex min-h-0 flex-1 flex-col bg-muted/20">
@@ -447,11 +479,75 @@ function PracticeContent() {
                             className="mr-1 inline rounded px-0.5 hover:bg-primary/10 hover:text-primary"
                             onClick={(e) => {
                               const r = e.currentTarget.getBoundingClientRect();
+                              const word = w.replace(/[.,?!]/g, "").trim();
+                              if (!word) return;
                               setTranslateOpen({
-                                word: w.replace(/[.,?!]/g, ""),
+                                word,
                                 x: r.left,
                                 y: r.bottom + 6,
+                                loading: true,
+                                meaning: null,
+                                ipa: null,
+                                wordType: null,
+                                error: null,
+                                systemVocabularyId: null,
                               });
+                              void (async () => {
+                                try {
+                                  const res = await fetch("/api/vocabulary-lookup", {
+                                    method: "POST",
+                                    headers: authHeaders(true),
+                                    body: JSON.stringify({ word }),
+                                  });
+                                  const json = await res.json();
+                                  setTranslateOpen((prev) => {
+                                    if (!prev || prev.word !== word) return prev;
+                                    if (json.success && json.data) {
+                                      return {
+                                        ...prev,
+                                        loading: false,
+                                        meaning: String(json.data.meaning ?? ""),
+                                        ipa:
+                                          json.data.ipa != null && json.data.ipa !== ""
+                                            ? String(json.data.ipa)
+                                            : null,
+                                        wordType:
+                                          json.data.word_type != null && json.data.word_type !== ""
+                                            ? String(json.data.word_type)
+                                            : null,
+                                        systemVocabularyId: String(
+                                          json.data.system_vocabulary_id ?? "",
+                                        ),
+                                        error: null,
+                                        fromCache: Boolean(json.data.from_cache),
+                                      };
+                                    }
+                                    return {
+                                      ...prev,
+                                      loading: false,
+                                      error: String(json.message ?? "Không tra được từ."),
+                                      meaning: null,
+                                      ipa: null,
+                                      wordType: null,
+                                      systemVocabularyId: null,
+                                    };
+                                  });
+                                } catch {
+                                  setTranslateOpen((prev) =>
+                                    prev && prev.word === word
+                                      ? {
+                                          ...prev,
+                                          loading: false,
+                                          error: "Lỗi mạng.",
+                                          meaning: null,
+                                          ipa: null,
+                                          wordType: null,
+                                          systemVocabularyId: null,
+                                        }
+                                      : prev,
+                                  );
+                                }
+                              })();
                             }}
                           >
                             {w}
@@ -532,11 +628,15 @@ function PracticeContent() {
                               {msg.practice_reading.evaluation.grammar_score ?? "—"}
                             </span>
                           </p>
-                          {msg.practice_reading.transcript ? (
-                            <p className="mt-2 text-sm leading-relaxed">
+                          <div className="mt-2">
+                            <p className="text-[11px] leading-snug text-muted-foreground">
+                              Điểm phát âm / ngữ pháp do AI phân tích từ file ghi. Dòng dưới là bản ghi Web
+                              Speech (tham khảo, có thể thiếu/sai); dùng nút loa để nghe lại âm thanh.
+                            </p>
+                            <p className="mt-1 text-sm leading-relaxed">
                               {renderUserTranscript(msg, setErrorPopup, true)}
                             </p>
-                          ) : null}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -643,6 +743,12 @@ function PracticeContent() {
                       className="rounded-xl border border-border/80 bg-muted/30 px-3 py-2 text-sm"
                     >
                       <span className="font-semibold">{v.word}</span>
+                      {v.word_type && (
+                        <span className="text-muted-foreground"> ({v.word_type})</span>
+                      )}
+                      {v.ipa && (
+                        <span className="block text-xs text-muted-foreground">{v.ipa}</span>
+                      )}
                       <span className="text-muted-foreground"> — {v.meaning}</span>
                     </li>
                   ))
@@ -662,19 +768,56 @@ function PracticeContent() {
             onClick={() => setTranslateOpen(null)}
           />
           <div
-            className="glass fixed z-50 w-[min(92vw,280px)] rounded-2xl p-4 shadow-2xl"
+            className="glass fixed z-50 flex w-[min(92vw,19rem)] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl border border-border/70 bg-card/95 shadow-2xl backdrop-blur-md"
             style={{ left: translateOpen.x, top: translateOpen.y }}
           >
-            <p className="text-base font-bold">{translateOpen.word}</p>
-            <p className="text-xs text-muted-foreground">Tra nhanh (demo)</p>
-            <p className="mt-2 text-sm">Bấm Lưu để thêm vào kho (API POST /api/vocabularies).</p>
-            <button
-              type="button"
-              onClick={saveHoveredWord}
-              className="mt-3 w-full rounded-xl bg-primary py-2 text-sm font-semibold text-primary-foreground"
-            >
-              Lưu vào kho
-            </button>
+            <div className="border-b border-border/60 bg-muted/25 px-3.5 py-2">
+              <p className="text-[15px] font-bold leading-tight tracking-tight text-foreground">
+                {translateOpen.word}
+              </p>
+            </div>
+
+            <div className="min-h-13 px-3 py-1">
+              {translateOpen.loading && (
+                <div className="flex items-center gap-2.5 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 shrink-0 animate-spin text-primary/80" aria-hidden />
+                  <span>Đang tra…</span>
+                </div>
+              )}
+              {translateOpen.error && (
+                <p className="text-sm leading-snug text-red-600 dark:text-red-400">{translateOpen.error}</p>
+              )}
+              {!translateOpen.loading && translateOpen.meaning && (
+                <div className="space-y-2.5">
+                  <p className="text-[14px]  leading-relaxed text-foreground">{translateOpen.meaning}</p>
+                  {(translateOpen.wordType || translateOpen.ipa) && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      {translateOpen.wordType && (
+                        <span className="inline-flex rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium uppercase tracking-wide text-primary">
+                          {translateOpen.wordType}
+                        </span>
+                      )}
+                      {translateOpen.ipa && (
+                        <span className="rounded-md bg-muted/80 px-2 py-0.5 font-mono text-[12px] leading-none text-muted-foreground tabular-nums">
+                          {translateOpen.ipa}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-border/60 bg-muted/10 px-3.5 pb-2">
+              <button
+                type="button"
+                onClick={saveHoveredWord}
+                disabled={translateOpen.loading || !translateOpen.meaning}
+                className="w-full rounded-xl bg-primary py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Lưu vào kho của tôi
+              </button>
+            </div>
           </div>
         </>
       )}
@@ -723,6 +866,8 @@ function PracticeContent() {
   );
 }
 
+const PRACTICE_MODAL_AUDIO_ID = "__practice_modal_redo__";
+
 function RedoPracticeModal({
   message,
   conversationId,
@@ -744,11 +889,16 @@ function RedoPracticeModal({
   onEvalDetail: (d: EvalDetail) => void;
 }) {
   const { isRecording, start, stop } = useVoiceCapture();
+  const { playingId, play: playModalAudio, stop: stopModalAudio } = useInlineAudioPlayer();
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     stopGlobalAudio();
   }, [stopGlobalAudio]);
+
+  useEffect(() => {
+    return () => stopModalAudio();
+  }, [stopModalAudio]);
 
   const showResult = Boolean(practiceResult?.practice_reading?.evaluation);
 
@@ -765,6 +915,10 @@ function RedoPracticeModal({
     setBusy(true);
     try {
       const { transcript, audioBase64, mimeType } = await stop();
+      if (!audioBase64) {
+        alert("Không ghi được file âm thanh. Hãy thử lại (kiểm tra mic và quyền trình duyệt).");
+        return;
+      }
       const mid = apiMessageId(message);
       const res = await fetch(
         `/api/conversations/${conversationId}/messages/${mid}/practice-read`,
@@ -773,9 +927,8 @@ function RedoPracticeModal({
           headers: authHeaders(true),
           body: JSON.stringify({
             original_transcript: transcript,
-            ...(audioBase64
-              ? { audio_base64: audioBase64, audio_mime_type: mimeType ?? "audio/webm" }
-              : {}),
+            audio_base64: audioBase64,
+            audio_mime_type: mimeType ?? "audio/webm",
           }),
         },
       );
@@ -839,14 +992,36 @@ function RedoPracticeModal({
                 <strong className="text-foreground">{ev.grammar_score ?? "—"}</strong>
               </span>
             </div>
-            {practiceResult.practice_reading?.transcript ? (
-              <div className="mt-4">
-                <p className="text-xs font-medium text-muted-foreground">Bạn đã nói</p>
-                <p className="mt-1 text-left text-sm leading-relaxed">
-                  {renderUserTranscript(practiceResult, onEvalDetail, true)}
-                </p>
+            <div className="mt-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-xs font-medium text-muted-foreground">Bạn đã nói (bản ghi chữ)</p>
+                  <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+                    Điểm phát âm / ngữ pháp do AI phân tích từ file âm thanh. Dòng dưới chỉ là Web Speech
+                    (tham khảo); nghe lại bản ghi bên cạnh để đối chiếu.
+                  </p>
+                </div>
+                {practiceResult.practice_reading?.audio_url ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      playModalAudio(PRACTICE_MODAL_AUDIO_ID, practiceResult.practice_reading!.audio_url!)
+                    }
+                    className="shrink-0 rounded-full p-2 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    aria-label={playingId === PRACTICE_MODAL_AUDIO_ID ? "Tạm dừng" : "Nghe bản ghi luyện đọc"}
+                  >
+                    {playingId === PRACTICE_MODAL_AUDIO_ID ? (
+                      <Pause className="h-5 w-5" />
+                    ) : (
+                      <Volume2 className="h-5 w-5" />
+                    )}
+                  </button>
+                ) : null}
               </div>
-            ) : null}
+              <p className="mt-2 text-left text-sm leading-relaxed">
+                {renderUserTranscript(practiceResult, onEvalDetail, true)}
+              </p>
+            </div>
             <div className="mt-6 flex flex-col gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
@@ -920,8 +1095,16 @@ function renderUserTranscript(
   let text: string;
   let details: EvalDetail[];
 
-  if (usePracticeReading && msg.practice_reading?.transcript) {
-    text = msg.practice_reading.transcript;
+  if (usePracticeReading && msg.practice_reading?.evaluation) {
+    const t = (msg.practice_reading.transcript ?? "").trim();
+    if (!t) {
+      return (
+        <span className="italic text-muted-foreground">
+          Không có bản ghi chữ từ trình duyệt — điểm dựa trên file âm thanh đã gửi.
+        </span>
+      );
+    }
+    text = t;
     details = msg.practice_reading.evaluation?.details ?? [];
   } else {
     text = msg.original_transcript || msg.content;

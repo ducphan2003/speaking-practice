@@ -80,7 +80,13 @@ export async function GET(req: Request) {
 
     const sort = parseSort(sortParam);
 
-    const vocabularies = await Vocabulary.find(query).sort(sort).populate('topic_id', 'name name_vi icon order');
+    const vocabularies = await Vocabulary.find(query)
+      .sort(sort)
+      .populate('topic_id', 'name name_vi icon order')
+      .populate(
+        'system_vocabulary_id',
+        'word translated_text source_language target_language ipa word_type'
+      );
 
     return NextResponse.json({ success: true, data: vocabularies });
   } catch (error: any) {
@@ -117,8 +123,14 @@ export async function POST(req: Request) {
       topicId = await resolveTopicIdFromConversation(body.conversation_id);
     }
 
+    let systemVocabularyId: mongoose.Types.ObjectId | null = null;
+    if (body.system_vocabulary_id && mongoose.Types.ObjectId.isValid(String(body.system_vocabulary_id))) {
+      systemVocabularyId = new mongoose.Types.ObjectId(String(body.system_vocabulary_id));
+    }
+
     const newVocab = await Vocabulary.create({
       user_id: new mongoose.Types.ObjectId(userId),
+      system_vocabulary_id: systemVocabularyId,
       conversation_id: body.conversation_id,
       topic_id: topicId ? new mongoose.Types.ObjectId(topicId) : null,
       mastered: Boolean(body.mastered),
@@ -134,7 +146,12 @@ export async function POST(req: Request) {
       await upsertUserTopic(userId, topicId);
     }
 
-    const populated = await Vocabulary.findById(newVocab._id).populate('topic_id', 'name name_vi icon order');
+    const populated = await Vocabulary.findById(newVocab._id)
+      .populate('topic_id', 'name name_vi icon order')
+      .populate(
+        'system_vocabulary_id',
+        'word translated_text source_language target_language ipa word_type'
+      );
 
     return NextResponse.json({ success: true, data: populated }, { status: 201 });
   } catch (error: any) {

@@ -11,6 +11,7 @@ export {
   streamChatReply,
   generateText,
   evaluateSpeakingPair,
+  evaluatePracticeReadingFromAudio,
   normalizeTranscriptText,
   generateAnswerHint,
   conversationMessagesToGeminiTurns,

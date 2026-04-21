@@ -49,7 +49,7 @@ export async function GET() {
       { sub_topic_id: subTopics[2]._id, content: "Ask for the menu", content_vi: "Hỏi xin thực đơn", difficulty: "EASY" }
     ]);
 
-    const defaultModel = process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash';
+    const defaultModel = process.env.GEMINI_MODEL?.trim() || 'gemini-2.5-flash-lite';
     await MasterConfig.bulkWrite([
       {
         updateOne: {

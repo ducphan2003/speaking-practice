@@ -160,14 +160,27 @@ Mỗi endpoint có trường **`code_status`** với một trong các giá trị
 - **Method:** `POST`
 - **Require Token:** Yes
 - **code_status:** `có` — `src/app/api/conversations/route.ts`
-- **Logic:** Tạo conversation gắn `user_id` từ JWT; load persona để lưu `persona_name`, `persona_prompt_context`. `chat_mode` hợp lệ: `SAMPLE_TOPIC` | `CUSTOM_TOPIC` | `FREE_TALK` (UI có thể gửi alias `CUSTOM` → server map sang `CUSTOM_TOPIC`).
-- **Request body:**
+- **Logic:** Tạo conversation gắn `user_id` từ JWT. **Hoặc** gửi `persona_id` để load persona từ DB và lưu `persona_name`, `persona_prompt_context`; **hoặc** gửi `persona_prompt_custom` (≥ 8 ký tự, tối đa ~12000) để dùng persona tùy chỉnh — khi đó `persona_id` có thể bỏ, `persona_name_custom` (tuỳ chọn, tối đa 120 ký tự) đặt tên hiển thị. `chat_mode` hợp lệ: `SAMPLE_TOPIC` | `CUSTOM_TOPIC` | `FREE_TALK` (UI có thể gửi alias `CUSTOM` → server map sang `CUSTOM_TOPIC`). Tự gán `canvas_x`/`canvas_y` trên trang chủ.
+- **Request body (tuỳ chọn thêm):** `gender` (`MALE` | `FEMALE` | `OTHER` | `UNSPECIFIED`), `avatar_code` (mã icon nghề — xem `src/lib/conversation-avatars.ts`), `avatar_url` (URL ảnh, ưu tiên hơn `avatar_code` nếu hợp lệ), `summary` (tóm tắt, tối đa 8000 ký tự).
+- **Request body (ví dụ — persona có sẵn):**
   ```json
   {
     "chat_mode": "SAMPLE_TOPIC",
     "sub_topic_id": "64b1f4...",
     "custom_topic_name": "Booking a hotel room",
-    "persona_id": "..."
+    "persona_id": "...",
+    "gender": "UNSPECIFIED",
+    "avatar_code": "office",
+    "summary": "Tuỳ chọn — hiển thị tooltip trên trang chủ"
+  }
+  ```
+- **Request body (ví dụ — persona tùy chỉnh):** thay `persona_id` bằng `persona_prompt_custom` (+ `persona_name_custom` nếu cần).
+  ```json
+  {
+    "chat_mode": "FREE_TALK",
+    "custom_topic_name": "Free talk",
+    "persona_prompt_custom": "Bạn là bạn đồng hành thân thiện, khuyến khích người học nói tiếng Anh…",
+    "persona_name_custom": "Bạn đồng hành"
   }
   ```
 - **Response:** `201` — `{ "success": true, "data": <Conversation document> }`
@@ -197,16 +210,16 @@ Mỗi endpoint có trường **`code_status`** với một trong các giá trị
   }
   ```
 
-### 3.3 Cập nhật / Đóng phòng chat
+### 3.3 Cập nhật phòng / vị trí canvas / tóm tắt
 
 - **Endpoint:** `/api/conversations/:id`
 - **Method:** `PATCH`
 - **Require Token:** Yes
 - **code_status:** `có` — `src/app/api/conversations/[id]/route.ts`
-- **Logic:** Cập nhật field (ví dụ `status: "ARCHIVED"`); chỉ owner mới được sửa.
+- **Logic:** Chỉ owner. Có thể gửi một hoặc nhiều trường: `canvas_x` + `canvas_y` (cùng lúc, số 0–1 — kéo thả trên trang chủ), `gender`, `avatar_code`, `avatar_url` (URL hoặc `null` để xóa), `summary` (chuỗi hoặc `null` để xóa).
 - **Request body (ví dụ):**
   ```json
-  { "status": "ARCHIVED" }
+  { "canvas_x": 0.35, "canvas_y": 0.42 }
   ```
 - **Response Example:**
   ```json
@@ -279,16 +292,39 @@ Mỗi endpoint có trường **`code_status`** với một trong các giá trị
 
 ## 5. Nhóm API Từ vựng & SRS
 
-### 5.1 Lưu từ vựng (Quick Save)
+### 5.1 Tra cứu từ (kho hệ thống + Google Translation)
+
+- **Endpoint:** `/api/vocabulary-lookup`
+- **Method:** `POST`
+- **Require Token:** Yes
+- **code_status:** `có` — `src/app/api/vocabulary-lookup/route.ts`
+- **Logic:** Tra trong collection `system_vocabularies` (khóa `en` + `vi` + từ chuẩn hóa). Không có thì gọi **Cloud Translation API** (EN→VI), đồng thời (song song) **Cloud Natural Language API** (`analyzeSyntax` → `word_type`) và **Gemini** (IPA — không có API Google chuyên IPA). Lưu bản ghi hệ thống rồi trả về. Bản ghi cũ thiếu `ipa` / `word_type` có thể được bổ sung khi tra lại.
+- **Request body:** `{ "word": "hello" }`
+- **Response Example:**
+  ```json
+  {
+    "success": true,
+    "data": {
+      "system_vocabulary_id": "...",
+      "word": "hello",
+      "meaning": "xin chào",
+      "ipa": "/həˈloʊ/",
+      "word_type": "noun",
+      "from_cache": true
+    }
+  }
+  ```
+
+### 5.2 Lưu từ vựng (Quick Save)
 
 - **Endpoint:** `/api/vocabularies`
 - **Method:** `POST`
 - **Require Token:** Yes
 - **code_status:** `có` — `src/app/api/vocabularies/route.ts`
-- **Logic:** Lưu `topic_id` (ref `topics._id`) nếu có; nếu chỉ gửi `conversation_id` mà không có `topic_id`, server suy ra topic từ `sub_topic_id` của conversation. Khi có topic hợp lệ, **upsert** bảng `user_topics` (user + topic).
-- **Request body:** `word`, `meaning`, `word_type` (bắt buộc); `ipa`, `example_sentence`, `user_note`, `conversation_id`, `topic_id`, `mastered` (tùy chọn).
+- **Logic:** Lưu `topic_id` (ref `topics._id`) nếu có; nếu chỉ gửi `conversation_id` mà không có `topic_id`, server suy ra topic từ `sub_topic_id` của conversation. Khi có topic hợp lệ, **upsert** bảng `user_topics` (user + topic). Có thể gửi `system_vocabulary_id` (ref `system_vocabularies._id`) để liên kết từ kho user với từ điển hệ thống.
+- **Request body:** `word`, `meaning`, `word_type` (bắt buộc); `ipa`, `example_sentence`, `user_note`, `conversation_id`, `topic_id`, `mastered`, `system_vocabulary_id` (tùy chọn).
 
-### 5.2 Danh sách từ vựng
+### 5.3 Danh sách từ vựng
 
 - **Endpoint:** `/api/vocabularies`
 - **Method:** `GET`
@@ -301,9 +337,9 @@ Mỗi endpoint có trường **`code_status`** với một trong các giá trị
   - `date_from`, `date_to` — khoảng ngày tạo (`createdAt`), định dạng ISO date (optional).
   - `mastered` — `true` / `false` (optional).
   - `sort` — `date_desc` (mặc định), `date_asc`, `alpha_asc`, `alpha_desc`.
-- **Response:** Mỗi phần tử populate `topic_id` (`name`, `name_vi`, …).
+- **Response:** Mỗi phần tử populate `topic_id` (`name`, `name_vi`, …) và `system_vocabulary_id` (`word`, `translated_text`, …) khi có.
 
-### 5.3 Cập nhật một từ vựng
+### 5.4 Cập nhật một từ vựng
 
 - **Endpoint:** `/api/vocabularies/:id`
 - **Method:** `PATCH`
@@ -311,7 +347,7 @@ Mỗi endpoint có trường **`code_status`** với một trong các giá trị
 - **code_status:** `có` — `src/app/api/vocabularies/[id]/route.ts`
 - **Logic:** Chỉ owner; có thể đổi `word`, `meaning`, `word_type`, `ipa`, `topic_id` (hoặc `null` để bỏ), `mastered`, … Nếu gán `topic_id` mới, upsert `user_topics`.
 
-### 5.4 SRS Bubble — từ cần ôn
+### 5.5 SRS Bubble — từ cần ôn
 
 - **Endpoint:** `/api/srs-bubble`
 - **Method:** `GET`

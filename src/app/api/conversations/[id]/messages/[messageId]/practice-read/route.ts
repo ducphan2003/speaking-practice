@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import dbConnect from '@/lib/mongodb';
 import Message from '@/models/Message';
 import Conversation from '@/models/Conversation';
-import { evaluateSpeaking } from '@/lib/ai-service';
+import { evaluatePracticeReading } from '@/lib/ai-service';
 import { getUserIdFromRequest, unauthorized } from '@/lib/auth';
 import { decodeAudioPayload, extFromMime } from '@/lib/audio-upload';
 import { uploadAudioToR2 } from '@/lib/r2';
@@ -44,12 +44,6 @@ export async function POST(
 
   const originalTranscript =
     typeof body.original_transcript === 'string' ? body.original_transcript.trim() : '';
-  if (!originalTranscript || originalTranscript.startsWith('(No speech detected')) {
-    return NextResponse.json(
-      { success: false, message: 'Cần bản ghi có nội dung nói (original_transcript).' },
-      { status: 400 },
-    );
-  }
 
   await dbConnect();
   const { id: conversationId, messageId } = await params;
@@ -73,15 +67,39 @@ export async function POST(
   }
 
   try {
-    let audioUrl: string | undefined;
-    if (body.audio_base64 && typeof body.audio_base64 === 'string') {
-      const { buffer, mimeType } = decodeAudioPayload(body.audio_base64, body.audio_mime_type);
-      const ext = extFromMime(mimeType);
-      const key = `conversations/${conversationId}/practice-read-${messageId}-${Date.now()}.${ext}`;
-      audioUrl = await uploadAudioToR2(buffer, key, mimeType);
+    if (!body.audio_base64 || typeof body.audio_base64 !== 'string' || !body.audio_base64.trim()) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Cần gửi kèm file audio (audio_base64) để Gemini chấm điểm luyện đọc.',
+        },
+        { status: 400 },
+      );
     }
 
-    const evaluation = await evaluateSpeaking(originalTranscript, targetText);
+    const { buffer, mimeType } = decodeAudioPayload(body.audio_base64, body.audio_mime_type);
+    if (buffer.length < 32) {
+      return NextResponse.json(
+        { success: false, message: 'File audio quá ngắn hoặc không hợp lệ.' },
+        { status: 400 },
+      );
+    }
+
+    const ext = extFromMime(mimeType);
+    const key = `conversations/${conversationId}/practice-read-${messageId}-${Date.now()}.${ext}`;
+    const audioUrl = await uploadAudioToR2(buffer, key, mimeType);
+
+    const transcriptHint =
+      originalTranscript && !originalTranscript.startsWith('(No speech detected')
+        ? originalTranscript
+        : undefined;
+
+    const evaluation = await evaluatePracticeReading({
+      targetText,
+      audioBuffer: buffer,
+      audioMimeType: mimeType,
+      transcriptHint,
+    });
 
     msg.practice_reading = {
       evaluation,

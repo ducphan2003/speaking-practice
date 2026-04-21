@@ -2,6 +2,8 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IVocabulary extends Document {
   user_id: mongoose.Types.ObjectId;
+  /** Liên kết từ trong kho user với bản ghi `system_vocabularies` (tra cứu / dịch hệ thống). */
+  system_vocabulary_id?: mongoose.Types.ObjectId | null;
   conversation_id?: mongoose.Types.ObjectId;
   /** Chủ đề (Topic) gắn với từ — ref `topics._id` khi có. */
   topic_id?: mongoose.Types.ObjectId | null;
@@ -26,6 +28,11 @@ export interface IVocabulary extends Document {
 const VocabularySchema: Schema = new Schema(
   {
     user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    system_vocabulary_id: {
+      type: Schema.Types.ObjectId,
+      ref: 'SystemVocabulary',
+      default: null,
+    },
     conversation_id: { type: Schema.Types.ObjectId, ref: 'Conversation' },
     topic_id: { type: Schema.Types.ObjectId, ref: 'Topic', default: null },
     mastered: { type: Boolean, default: false },

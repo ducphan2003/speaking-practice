@@ -8,6 +8,8 @@ type WebSpeechRecognition = EventTarget & {
   continuous: boolean;
   interimResults: boolean;
   onresult: ((ev: WebSpeechRecognitionResultEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
   start(): void;
   stop(): void;
 };
@@ -43,7 +45,7 @@ export function useVoiceCapture() {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
-  const speechRecRef = useRef<{ stop: () => void } | null>(null);
+  const speechRecRef = useRef<WebSpeechRecognition | null>(null);
   const transcriptRef = useRef('');
 
   const start = useCallback(async () => {
@@ -88,9 +90,42 @@ export function useVoiceCapture() {
     setIsRecording(true);
   }, []);
 
+  /** Dừng nhận dạng giọng nói và chờ session kết thúc — nếu không, transcript có thể chỉ còn vài từ đầu. */
+  async function stopSpeechRecognitionAndWait(rec: WebSpeechRecognition | null): Promise<void> {
+    if (!rec) return;
+    let settled = false;
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        rec.onend = null;
+        rec.onerror = null;
+        resolve();
+      };
+      const timeoutId = window.setTimeout(finish, 2500);
+      rec.onend = () => {
+        window.clearTimeout(timeoutId);
+        finish();
+      };
+      rec.onerror = () => {
+        window.clearTimeout(timeoutId);
+        finish();
+      };
+      try {
+        rec.stop();
+      } catch {
+        window.clearTimeout(timeoutId);
+        finish();
+      }
+    });
+    // Một số engine gửi onresult sau cùng một tick với onend
+    await new Promise<void>((r) => queueMicrotask(() => r()));
+  }
+
   const stop = useCallback(async (): Promise<VoiceCaptureResult> => {
-    speechRecRef.current?.stop();
+    const rec = speechRecRef.current;
     speechRecRef.current = null;
+    await stopSpeechRecognitionAndWait(rec);
 
     const mr = mediaRecorderRef.current;
     mediaRecorderRef.current = null;

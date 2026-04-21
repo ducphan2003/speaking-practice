@@ -10,6 +10,11 @@ import { getGeminiApiKey } from './config';
 import { AI_STEP_KEYS, type AiStepKey } from '@/lib/ai-step-keys';
 import { resolveGeminiModelForStep } from '@/lib/master-config';
 
+/** MIME an toàn cho inline audio (bỏ tham số codec sau `;`). */
+function normalizeAudioMimeType(mime: string): string {
+  return mime.split(';')[0]!.trim().toLowerCase();
+}
+
 let genAiSingleton: GoogleGenerativeAI | null = null;
 
 function getGoogleGenerativeAI(): GoogleGenerativeAI {
@@ -144,15 +149,92 @@ export async function evaluateSpeakingPair(
     },
   });
 
-  const prompt = `You are an English speaking coach. Compare the learner's raw speech transcript with the normalized version.
+  const prompt = `You are an English speaking coach. Compare the learner's RAW speech transcript with the TARGET text.
 
-Raw (as spoken): ${JSON.stringify(original)}
-Normalized intent: ${JSON.stringify(normalized)}
+Raw transcript (speech-to-text; often lowercase and without final punctuation): ${JSON.stringify(original)}
+Target sentence: ${JSON.stringify(normalized)}
 
-Score pronunciation (0-100) and grammar (0-100). List concrete issues in "details": error_type must be one of PRONUNCIATION, GRAMMAR, VOCAB.
-Return JSON only per schema.`;
+## pronunciation_score (0–100) — use a STRICT scale
+- Be demanding: this reflects how well what they said matches the target in words and clarity. Mis-heard words, missing words, or extra wrong words must lower the score sharply.
+- Do NOT give 90+ unless the transcript substantially matches the target (same main words, same idea) and there is no sign of major mispronunciation or omission.
+- 95–100: essentially full match to target wording; minor STT quirks only.
+- 75–94: understandable but noticeable gaps (wrong/missing words, unclear chunks).
+- Below 75: large mismatch, many wrong or missing words, or largely unintelligible vs target.
+- Spoken English rarely needs a "perfect" 100 unless the raw text aligns very closely with the target.
+
+## grammar_score (0–100)
+- Score meaningful grammar: tense, agreement, word order, missing articles/auxiliaries, wrong word forms when they change meaning.
+- IGNORE completely — do NOT list these in "details" and do NOT lower grammar_score for these alone:
+  - Capitalization (e.g. "hello" vs "Hello" at the start of a sentence)
+  - Missing or different terminal punctuation only (. ? !) when the words otherwise match the target
+  - Comma placement or minor punctuation that does not change meaning
+  - STT spacing or hyphen quirks
+
+## details
+- Each item: error_type must be exactly one of: PRONUNCIATION, GRAMMAR, VOCAB.
+- NEVER emit an item whose only issue is capitalization or sentence-final punctuation.
+- PRONUNCIATION: wrong or unclear words vs target, missing spoken words, substitutions that sound like mispronunciation.
+- GRAMMAR / VOCAB: real mistakes in structure or word choice (not cosmetic).
+
+Return JSON only, matching the schema.`;
 
   const result = await model.generateContent(prompt);
+  const raw = result.response.text();
+  return JSON.parse(raw) as SpeakingEvaluationResult;
+}
+
+/**
+ * Luyện đọc: chấm từ file âm thanh + câu mẫu (không chấm chỉ từ text).
+ * Model lấy từ `master_configs` key `ai_step_evaluate_practice_reading` (vd. gemini-2.5-flash-lite).
+ */
+export async function evaluatePracticeReadingFromAudio(input: {
+  targetText: string;
+  audioBuffer: Buffer;
+  audioMimeType: string;
+  /** Bản ghi Web Speech phía client — chỉ gợi ý, không dùng làm nguồn chấm điểm chính. */
+  transcriptHint?: string;
+}): Promise<SpeakingEvaluationResult> {
+  const modelName = await resolveGeminiModelForStep(AI_STEP_KEYS.EVALUATE_PRACTICE_READING);
+  const model = getGoogleGenerativeAI().getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: evaluationSchema,
+      temperature: 0.3,
+    },
+  });
+
+  const mime = normalizeAudioMimeType(input.audioMimeType);
+  const base64 = input.audioBuffer.toString('base64');
+
+  const hint = input.transcriptHint?.trim();
+  const hintBlock =
+    hint &&
+    !hint.startsWith('(No speech detected') &&
+    hint.length > 0
+      ? `\nOptional browser speech-to-text caption (often incomplete or wrong — do NOT score from this alone; rely on the audio): ${JSON.stringify(hint)}\n`
+      : '';
+
+  const prompt = `You are an English speaking coach. The learner recorded themselves reading a sentence aloud. Use the ATTACHED AUDIO as the only ground truth for how they spoke.
+
+TARGET sentence they were asked to read (compare against this):
+${JSON.stringify(input.targetText.trim())}
+${hintBlock}
+## How to score
+- **pronunciation_score (0–100), STRICT:** Judge from the audio only — clarity, word stress, intonation, fluency, and how closely the *spoken* content matches the target (missing words, wrong words, slurred sounds). Do not infer from optional captions.
+- **grammar_score (0–100):** Meaningful spoken grammar vs the target (tense, agreement, word order, missing function words). IGNORE: capitalization only; sentence-final punctuation only; STT quirks.
+
+## details
+- error_type: exactly PRONUNCIATION, GRAMMAR, or VOCAB.
+- Ground every item in what you **hear** in the audio.
+- NEVER add items that are only capitalization or final punctuation fixes.
+
+Return JSON only, matching the schema.`;
+
+  const result = await model.generateContent([
+    prompt,
+    { inlineData: { mimeType: mime, data: base64 } },
+  ]);
   const raw = result.response.text();
   return JSON.parse(raw) as SpeakingEvaluationResult;
 }
