@@ -5,6 +5,7 @@ import mongoose from 'mongoose';
 import { getUserIdFromRequest, unauthorized } from '@/lib/auth';
 import { normalizeAvatarCode } from '@/lib/conversation-avatars';
 import { isValidGender } from '@/lib/conversation-gender';
+import { normalizePracticeMode } from '@/lib/conversation-practice-mode';
 
 async function loadOwnedConversation(id: string, userId: string) {
   if (!mongoose.Types.ObjectId.isValid(id)) return null;
@@ -103,6 +104,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     } else if (typeof body.summary === 'string') {
       const t = body.summary.trim();
       $set.summary = t.length > 0 ? t.slice(0, 8000) : null;
+    }
+
+    if ('practice_mode' in body) {
+      $set.practice_mode = normalizePracticeMode(body.practice_mode);
     }
 
     if (Object.keys($set).length === 0) {

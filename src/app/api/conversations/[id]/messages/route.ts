@@ -3,6 +3,9 @@ import dbConnect from '@/lib/mongodb';
 import Message from '@/models/Message';
 import Conversation from '@/models/Conversation';
 import { normalizeTranscript, evaluateSpeaking, generateAIReply, textToSpeech } from '@/lib/ai-service';
+import { buildThreadSummaryBriefDescription } from '@/lib/conversation-thread-memory';
+import { normalizePracticeMode } from '@/lib/conversation-practice-mode';
+import { summarizeDialogueWindow } from '@/lib/google';
 import { getUserIdFromRequest, unauthorized } from '@/lib/auth';
 import { encodeSseEvent } from '@/lib/sse';
 import { decodeAudioPayload, extFromMime } from '@/lib/audio-upload';
@@ -71,8 +74,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   await dbConnect();
   const { id } = await params;
-  const conv = await assertConversationOwner(id, userId);
-  if (!conv) {
+  if (!(await assertConversationOwner(id, userId))) {
     return NextResponse.json({ success: false, message: 'Conversation not found' }, { status: 404 });
   }
 
@@ -116,10 +118,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         send('user_message', { message: userPlain });
 
         const history = await Message.find({ conversation_id: id }).sort({ createdAt: 1 });
+        const convForChat = await Conversation.findById(id);
+        if (!convForChat) {
+          send('error', { success: false, message: 'Conversation not found' });
+          return;
+        }
+        const practiceMode = normalizePracticeMode(convForChat.practice_mode);
+        const historyForModel = history.map((m) => ({
+          sender: m.sender,
+          content: m.content,
+        }));
         const aiContent = await generateAIReply(
-          history,
+          historyForModel,
           normalized,
-          conv.persona_prompt_context || '',
+          convForChat.persona_prompt_context || '',
+          practiceMode,
+          { threadSummary: convForChat.thread_summary },
         );
         const aiAudioUrl = await textToSpeech(aiContent);
 
@@ -131,6 +145,50 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         });
 
         const aiPlain = toPlainMessage(aiMessageDoc);
+
+        const dialogueAfter = await Message.find({
+          conversation_id: id,
+          sender: { $in: ['USER', 'AI'] },
+        })
+          .sort({ createdAt: 1 })
+          .select('sender content')
+          .lean();
+        const lines = dialogueAfter.map((m) => ({
+          sender: m.sender as string,
+          content: m.content as string,
+        }));
+        const nDialogue = lines.length;
+        if (nDialogue > 0 && nDialogue % 10 === 0) {
+          const last10 = lines.slice(-10);
+          const nUser = last10.filter((m) => m.sender === 'USER').length;
+          const nAi = last10.filter((m) => m.sender === 'AI').length;
+          if (last10.length === 10 && nUser === 5 && nAi === 5) {
+            const convForSummary = await Conversation.findById(id);
+            if (convForSummary) {
+              const brief = buildThreadSummaryBriefDescription({
+                custom_topic_name: convForSummary.custom_topic_name,
+                persona_name: convForSummary.persona_name ?? null,
+                chat_mode: convForSummary.chat_mode,
+                practice_mode: convForSummary.practice_mode,
+                learner_session_note: convForSummary.summary ?? null,
+              });
+              try {
+                const prev =
+                  typeof convForSummary.thread_summary === 'string'
+                    ? convForSummary.thread_summary
+                    : null;
+                const next = await summarizeDialogueWindow({
+                  briefDescription: brief,
+                  previousSummary: prev,
+                  lastTenMessages: last10,
+                });
+                await Conversation.updateOne({ _id: id }, { $set: { thread_summary: next } });
+              } catch (e) {
+                console.error('[thread_summary]', e);
+              }
+            }
+          }
+        }
 
         send('complete', {
           success: true,

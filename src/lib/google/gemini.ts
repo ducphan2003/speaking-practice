@@ -102,6 +102,42 @@ export async function generateText(prompt: string): Promise<string> {
   return result.response.text().trim();
 }
 
+const MAX_THREAD_SUMMARY_CHARS = 14_000;
+
+/**
+ * Cập nhật tóm tắt luân phiên: tóm tắt trước + 10 dòng USER/AI + mô tả ngữ cảnh.
+ */
+export async function summarizeDialogueWindow(input: {
+  briefDescription: string;
+  previousSummary: string | null | undefined;
+  lastTenMessages: Array<{ sender: string; content: string }>;
+}): Promise<string> {
+  const prev =
+    input.previousSummary && input.previousSummary.trim().length > 0
+      ? input.previousSummary.trim()
+      : '(No previous summary — this is the first 10-message chunk.)';
+  const transcript = input.lastTenMessages
+    .map((m) => `${m.sender}: ${m.content}`)
+    .join('\n');
+  const prompt = `You maintain a **rolling English summary** of a speaking-practice chat (learner USER lines vs AI tutor/partner).
+
+## What this conversation is about (for orientation)
+${input.briefDescription.trim()}
+
+## Previous cumulative summary
+${prev}
+
+## Latest 10 lines (5 USER + 5 AI), chronological
+${transcript}
+
+Write ONE updated **cumulative** summary in English that merges the previous summary with what happens in these 10 lines. Be concise but information-dense (aim under ~600 words). Continuous prose — no markdown headings, no bullet list unless absolutely necessary. Capture: topics, tone, recurring mistakes, vocabulary worth remembering, open questions, and anything that helps the AI stay coherent in the next turns.
+
+Output ONLY the new summary text — no preamble, no wrapping quotes.`;
+
+  const out = await generateText(prompt);
+  return out.slice(0, MAX_THREAD_SUMMARY_CHARS);
+}
+
 const evaluationSchema: Schema = {
   type: SchemaType.OBJECT,
   properties: {
@@ -257,9 +293,11 @@ const hintSchema: Schema = {
   required: ['hint'],
 };
 
-export async function generateAnswerHint(conversationSummary: string): Promise<string> {
+export async function generateAnswerHint(
+  conversationSummary: string,
+  practiceStyleGuidance?: string
+): Promise<string> {
   const modelName = await resolveGeminiModelForStep(AI_STEP_KEYS.HINT);
-  console.log('modelName', modelName);
   const model = getGoogleGenerativeAI().getGenerativeModel({
     model: modelName,
     generationConfig: {
@@ -269,12 +307,18 @@ export async function generateAnswerHint(conversationSummary: string): Promise<s
     },
   });
 
-  const prompt = `Given this English conversation context, write ONE complete sample reply the learner could say next, in natural English.
+  const styleBlock =
+    typeof practiceStyleGuidance === 'string' && practiceStyleGuidance.trim().length > 0
+      ? `\n\nPractice-style constraints (the learner chose this mode — follow when shaping vocabulary, formality, and how "exam-like" or casual the reply is):\n${practiceStyleGuidance.trim()}`
+      : '';
+
+  const prompt = `Given this English conversation context, write ONE complete sample reply the learner could say next — phrasing they could **say out loud** naturally, not stiff essay English. The sample must be **entirely in English** (English practice app). If the last user line was partly or fully Vietnamese, the natural next line is often short acknowledgment + continuing in English, e.g. *"Thanks — I mean …"* or *"Thank you, I want to say …"* followed by their idea in English.
 
 Requirements:
 - A single coherent answer (not bullet points, not multiple alternatives).
 - About 30–40 words total.
-- Match the tone and topic of the conversation; address the last AI turn appropriately.
+- Sound like a real person speaking: contractions OK, avoid robotic fillers, respond directly to the last AI turn.
+- Match the tone and topic of the conversation; address the last AI turn appropriately.${styleBlock}
 
 Context:
 ${conversationSummary}`;

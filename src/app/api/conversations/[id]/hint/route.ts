@@ -4,6 +4,7 @@ import dbConnect from '@/lib/mongodb';
 import Message from '@/models/Message';
 import Conversation from '@/models/Conversation';
 import { generateHint } from '@/lib/ai-service';
+import { normalizePracticeMode } from '@/lib/conversation-practice-mode';
 import { getUserIdFromRequest, unauthorized } from '@/lib/auth';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -20,7 +21,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
     const history = await Message.find({ conversation_id: id }).sort({ createdAt: 1 });
 
-    const hint = await generateHint(history);
+    const practiceMode = normalizePracticeMode(conv.practice_mode);
+    const hint = await generateHint(history, practiceMode);
 
     return NextResponse.json({ success: true, data: hint });
   } catch (error: any) {

@@ -16,11 +16,16 @@ import {
 } from "@/components/dashboard/ConversationSpace";
 import { authHeaders } from "@/lib/api-client";
 import { DEFAULT_AVATAR_CODE } from "@/lib/conversation-avatars";
+import {
+  PRACTICE_MODE_DEFAULT,
+  type PracticeMode,
+} from "@/lib/conversation-practice-mode";
 
 export default function DashboardPage() {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
   const [chatMode, setChatMode] = useState<ChatMode>("SAMPLE_TOPIC");
+  const [practiceMode, setPracticeMode] = useState<PracticeMode>(PRACTICE_MODE_DEFAULT);
   const [topicLabel, setTopicLabel] = useState("");
   const [topics, setTopics] = useState<TopicOption[]>([]);
   const [subTopics, setSubTopics] = useState<SubTopicOption[]>([]);
@@ -242,6 +247,7 @@ export default function DashboardPage() {
         headers: authHeaders(true),
         body: JSON.stringify({
           chat_mode,
+          practice_mode: practiceMode,
           sub_topic_id,
           custom_topic_name,
           ...personaPayload,
@@ -357,6 +363,8 @@ export default function DashboardPage() {
         onClose={() => setModalOpen(false)}
         chatMode={chatMode}
         onChatModeChange={setChatMode}
+        practiceMode={practiceMode}
+        onPracticeModeChange={setPracticeMode}
         topicLabel={topicLabel}
         onTopicLabelChange={setTopicLabel}
         topics={topics}

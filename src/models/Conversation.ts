@@ -1,8 +1,11 @@
 import mongoose, { Schema, Document } from 'mongoose';
+import { PRACTICE_MODES, PRACTICE_MODE_DEFAULT, type PracticeMode } from '@/lib/conversation-practice-mode';
 
 export interface IConversation extends Document {
   user_id: mongoose.Types.ObjectId;
   chat_mode: string;
+  /** Phong cách luyện: hằng ngày | chuyên ngành | kiểu IELTS Speaking */
+  practice_mode: PracticeMode;
   sub_topic_id?: mongoose.Types.ObjectId | null;
   custom_topic_name: string;
   active_mission_ids: mongoose.Types.ObjectId[];
@@ -21,6 +24,8 @@ export interface IConversation extends Document {
   avatar_url?: string | null;
   /** Tóm tắt cuộc trò chuyện — tooltip khi hover thẻ */
   summary?: string | null;
+  /** Tóm tắt luân phiên (mỗi 10 tin USER+AI) — ngữ cảnh dài cho AI */
+  thread_summary?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -29,6 +34,11 @@ const ConversationSchema: Schema = new Schema(
   {
     user_id: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     chat_mode: { type: String, enum: ['SAMPLE_TOPIC', 'CUSTOM_TOPIC', 'FREE_TALK'], required: true },
+    practice_mode: {
+      type: String,
+      enum: PRACTICE_MODES,
+      default: PRACTICE_MODE_DEFAULT,
+    },
     sub_topic_id: { type: Schema.Types.ObjectId, ref: 'SubTopic', default: null },
     custom_topic_name: { type: String, required: true },
     active_mission_ids: [{ type: Schema.Types.ObjectId, ref: 'Mission' }],
@@ -46,6 +56,7 @@ const ConversationSchema: Schema = new Schema(
     avatar_code: { type: String, default: 'office' },
     avatar_url: { type: String, required: false },
     summary: { type: String, required: false },
+    thread_summary: { type: String, required: false },
   },
   { timestamps: true }
 );

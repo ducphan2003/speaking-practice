@@ -10,6 +10,7 @@ export {
   generateChatReply,
   streamChatReply,
   generateText,
+  summarizeDialogueWindow,
   evaluateSpeakingPair,
   evaluatePracticeReadingFromAudio,
   normalizeTranscriptText,

@@ -4,6 +4,11 @@ import { AnimatePresence, motion } from "framer-motion";
 import { X } from "lucide-react";
 import { CONVERSATION_AVATARS } from "@/lib/conversation-avatars";
 import { CONVERSATION_GENDERS } from "@/lib/conversation-gender";
+import {
+  PRACTICE_MODES,
+  type PracticeMode,
+  PRACTICE_MODE_UI,
+} from "@/lib/conversation-practice-mode";
 import { cn } from "@/lib/utils";
 
 export type ChatMode = "SAMPLE_TOPIC" | "CUSTOM" | "FREE_TALK";
@@ -18,6 +23,8 @@ type Props = {
   onClose: () => void;
   chatMode: ChatMode;
   onChatModeChange: (m: ChatMode) => void;
+  practiceMode: PracticeMode;
+  onPracticeModeChange: (m: PracticeMode) => void;
   topicLabel: string;
   onTopicLabelChange: (v: string) => void;
   topics: TopicOption[];
@@ -50,6 +57,8 @@ export function StartConversationModal({
   onClose,
   chatMode,
   onChatModeChange,
+  practiceMode,
+  onPracticeModeChange,
   topicLabel,
   onTopicLabelChange,
   topics,
@@ -137,6 +146,33 @@ export function StartConversationModal({
                       {label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-sm font-medium text-foreground">Chế độ luyện nói</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  {PRACTICE_MODES.map((m) => {
+                    const { titleVi, descriptionVi } = PRACTICE_MODE_UI[m];
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        onClick={() => onPracticeModeChange(m)}
+                        className={cn(
+                          "rounded-xl border px-3 py-2.5 text-left text-xs font-medium transition",
+                          practiceMode === m
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border bg-muted/40 text-muted-foreground hover:bg-muted hover:text-foreground",
+                        )}
+                      >
+                        <span className="block text-foreground">{titleVi}</span>
+                        <span className="mt-1 block font-normal leading-snug text-[11px] text-muted-foreground">
+                          {descriptionVi}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -315,6 +351,20 @@ export function StartConversationModal({
                     </div>
                   </div>
                 )}
+              </div>
+
+              <div>
+                <label htmlFor="conversation-summary" className="mb-1.5 block text-sm font-medium">
+                  Tóm tắt / ghi chú (tuỳ chọn)
+                </label>
+                <textarea
+                  id="conversation-summary"
+                  value={summary}
+                  onChange={(e) => onSummaryChange(e.target.value)}
+                  rows={2}
+                  placeholder="Ghi chú ngắn cho buổi luyện này…"
+                  className="w-full resize-y rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none ring-ring focus:ring-2"
+                />
               </div>
 
               <button

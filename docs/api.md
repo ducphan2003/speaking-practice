@@ -161,7 +161,7 @@ Mỗi endpoint có trường **`code_status`** với một trong các giá trị
 - **Require Token:** Yes
 - **code_status:** `có` — `src/app/api/conversations/route.ts`
 - **Logic:** Tạo conversation gắn `user_id` từ JWT. **Hoặc** gửi `persona_id` để load persona từ DB và lưu `persona_name`, `persona_prompt_context`; **hoặc** gửi `persona_prompt_custom` (≥ 8 ký tự, tối đa ~12000) để dùng persona tùy chỉnh — khi đó `persona_id` có thể bỏ, `persona_name_custom` (tuỳ chọn, tối đa 120 ký tự) đặt tên hiển thị. `chat_mode` hợp lệ: `SAMPLE_TOPIC` | `CUSTOM_TOPIC` | `FREE_TALK` (UI có thể gửi alias `CUSTOM` → server map sang `CUSTOM_TOPIC`). Tự gán `canvas_x`/`canvas_y` trên trang chủ.
-- **Request body (tuỳ chọn thêm):** `gender` (`MALE` | `FEMALE` | `OTHER` | `UNSPECIFIED`), `avatar_code` (mã icon nghề — xem `src/lib/conversation-avatars.ts`), `avatar_url` (URL ảnh, ưu tiên hơn `avatar_code` nếu hợp lệ), `summary` (tóm tắt, tối đa 8000 ký tự).
+- **Request body (tuỳ chọn thêm):** `practice_mode` — `EVERYDAY` (mặc định: hội thoại hằng ngày, dễ) | `PROFESSIONAL` (chuyên ngành) | `IELTS_SPEAKING` (kiểu IELTS Speaking). Ảnh hưởng system prompt khi AI trả lời và khi gợi ý câu mẫu. `gender` (`MALE` | `FEMALE` | `OTHER` | `UNSPECIFIED`), `avatar_code` (mã icon nghề — xem `src/lib/conversation-avatars.ts`), `avatar_url` (URL ảnh, ưu tiên hơn `avatar_code` nếu hợp lệ), `summary` (tóm tắt, tối đa 8000 ký tự).
 - **Request body (ví dụ — persona có sẵn):**
   ```json
   {
@@ -169,6 +169,7 @@ Mỗi endpoint có trường **`code_status`** với một trong các giá trị
     "sub_topic_id": "64b1f4...",
     "custom_topic_name": "Booking a hotel room",
     "persona_id": "...",
+    "practice_mode": "EVERYDAY",
     "gender": "UNSPECIFIED",
     "avatar_code": "office",
     "summary": "Tuỳ chọn — hiển thị tooltip trên trang chủ"
@@ -216,10 +217,14 @@ Mỗi endpoint có trường **`code_status`** với một trong các giá trị
 - **Method:** `PATCH`
 - **Require Token:** Yes
 - **code_status:** `có` — `src/app/api/conversations/[id]/route.ts`
-- **Logic:** Chỉ owner. Có thể gửi một hoặc nhiều trường: `canvas_x` + `canvas_y` (cùng lúc, số 0–1 — kéo thả trên trang chủ), `gender`, `avatar_code`, `avatar_url` (URL hoặc `null` để xóa), `summary` (chuỗi hoặc `null` để xóa).
+- **Logic:** Chỉ owner. Có thể gửi một hoặc nhiều trường: `canvas_x` + `canvas_y` (cùng lúc, số 0–1 — kéo thả trên trang chủ), `gender`, `avatar_code`, `avatar_url` (URL hoặc `null` để xóa), `summary` (chuỗi hoặc `null` để xóa), `practice_mode` (`EVERYDAY` | `PROFESSIONAL` | `IELTS_SPEAKING` — đổi trong phòng luyện, áp dụng cho AI từ lượt sau).
 - **Request body (ví dụ):**
   ```json
   { "canvas_x": 0.35, "canvas_y": 0.42 }
+  ```
+- **Đổi chế độ luyện trong phòng:**
+  ```json
+  { "practice_mode": "IELTS_SPEAKING" }
   ```
 - **Response Example:**
   ```json
@@ -264,7 +269,7 @@ Mỗi endpoint có trường **`code_status`** với một trong các giá trị
 - **Method:** `POST`
 - **Require Token:** Yes
 - **code_status:** `có (AI mock)` — `src/app/api/conversations/[id]/messages/route.ts` + `src/lib/ai-service.ts`
-- **Logic:** Chuẩn hóa transcript, đánh giá, sinh câu trả lời AI, TTS (hiện mock), lưu 2 bản ghi message (USER + AI).
+- **Logic:** Chuẩn hóa transcript, đánh giá, sinh câu trả lời AI (system instruction có **tóm tắt luân phiên** `thread_summary` nếu có + **5 tin USER/AI gần nhất** cùng full history), TTS, lưu USER + AI. Khi tổng số tin USER+AI đạt **bội 10** và **10 tin cuối gồm đúng 5 USER + 5 AI**, server gọi Gemini cập nhật `thread_summary` (merge tóm tắt trước + 10 dòng + mô tả topic/persona/mode/ghi chú lúc tạo phòng).
 - **Request body:**
   ```json
   {

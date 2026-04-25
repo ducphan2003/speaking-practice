@@ -18,6 +18,13 @@ import { AppNav } from "@/components/layout/AppNav";
 import { authHeaders } from "@/lib/api-client";
 import { readSseResponse } from "@/lib/sse-client";
 import { cn } from "@/lib/utils";
+import { PracticeModeMenu } from "@/components/practice/PracticeModeMenu";
+import {
+  normalizePracticeMode,
+  practiceModeShortLabelVi,
+  PRACTICE_MODE_DEFAULT,
+  type PracticeMode,
+} from "@/lib/conversation-practice-mode";
 import { useVoiceCapture } from "@/hooks/useVoiceCapture";
 import { useInlineAudioPlayer } from "@/hooks/useInlineAudioPlayer";
 
@@ -104,6 +111,7 @@ function PracticeContent() {
   const [messages, setMessages] = useState<ApiMessage[]>([]);
   const [missions, setMissions] = useState<MissionRow[]>([]);
   const [personaName, setPersonaName] = useState("—");
+  const [practiceMode, setPracticeMode] = useState<PracticeMode>(PRACTICE_MODE_DEFAULT);
   const [chatModeLabel, setChatModeLabel] = useState("—");
   const [sessionVocab, setSessionVocab] = useState<VocabRow[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -143,6 +151,7 @@ function PracticeContent() {
       }
       const conv = cJson.data;
       setPersonaName(conv.persona_name || "—");
+      setPracticeMode(normalizePracticeMode(conv.practice_mode));
       setChatModeLabel(conv.chat_mode || "—");
 
       if (SHOW_HIDDEN_MISSIONS) {
@@ -377,23 +386,6 @@ function PracticeContent() {
     <div className="flex h-dvh max-h-dvh flex-col overflow-hidden bg-background text-foreground">
       <AppNav />
 
-      <div className="shrink-0 border-b border-border bg-card/50 px-4 py-3 sm:px-6">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-3">
-          <Link
-            href="/"
-            onClick={() => stopMessageAudio()}
-            className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Trang chủ
-          </Link>
-          <span className="text-border">|</span>
-          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            {modeLabel}
-          </span>
-        </div>
-      </div>
-
       {loadError && (
         <div className="mx-auto w-full max-w-7xl shrink-0 px-4 py-2 text-sm text-red-600">{loadError}</div>
       )}
@@ -406,6 +398,11 @@ function PracticeContent() {
               <p className="text-sm text-muted-foreground">
                 Persona:{" "}
                 <span className="font-medium text-foreground">{personaName}</span>
+                <span className="text-border"> · </span>
+                Chế độ luyện:{" "}
+                <span className="font-medium text-foreground">
+                  {practiceModeShortLabelVi(practiceMode)}
+                </span>
               </p>
             </div>
 
@@ -579,9 +576,10 @@ function PracticeContent() {
                       <p className="text-sm leading-relaxed text-left">
                         {renderUserTranscript(msg, setErrorPopup, false)}
                       </p>
-                      {msg.evaluation &&
+                      {((msg.evaluation &&
                         ((msg.evaluation.details?.length ?? 0) > 0 ||
-                          typeof msg.evaluation.pronunciation_score === "number") && (
+                          typeof msg.evaluation.pronunciation_score === "number")) ||
+                        msg.practice_reading?.evaluation) && (
                           <button
                             type="button"
                             onClick={() => {
@@ -594,51 +592,6 @@ function PracticeContent() {
                             Luyện đọc lại
                           </button>
                         )}
-                      {msg.practice_reading?.evaluation && (
-                        <div className="mt-3 rounded-xl border border-primary/25 bg-background/60 p-3 text-left shadow-sm">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-xs font-semibold text-primary">Luyện đọc lại</p>
-                            {msg.practice_reading.audio_url && (
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  playMessageAudio(`${msg._id}__redo`, msg.practice_reading!.audio_url!)
-                                }
-                                className="rounded-full p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-                                aria-label={
-                                  playingId === `${msg._id}__redo` ? "Tạm dừng" : "Nghe bản luyện"
-                                }
-                              >
-                                {playingId === `${msg._id}__redo` ? (
-                                  <Pause className="h-4 w-4" />
-                                ) : (
-                                  <Volume2 className="h-4 w-4" />
-                                )}
-                              </button>
-                            )}
-                          </div>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Phát âm{" "}
-                            <span className="font-medium text-foreground">
-                              {msg.practice_reading.evaluation.pronunciation_score ?? "—"}
-                            </span>
-                            {" · "}
-                            Ngữ pháp{" "}
-                            <span className="font-medium text-foreground">
-                              {msg.practice_reading.evaluation.grammar_score ?? "—"}
-                            </span>
-                          </p>
-                          <div className="mt-2">
-                            <p className="text-[11px] leading-snug text-muted-foreground">
-                              Điểm phát âm / ngữ pháp do AI phân tích từ file ghi. Dòng dưới là bản ghi Web
-                              Speech (tham khảo, có thể thiếu/sai); dùng nút loa để nghe lại âm thanh.
-                            </p>
-                            <p className="mt-1 text-sm leading-relaxed">
-                              {renderUserTranscript(msg, setErrorPopup, true)}
-                            </p>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   </div>
                 ),
@@ -646,8 +599,9 @@ function PracticeContent() {
             </div>
 
             <div className="shrink-0 border-t border-border bg-card/80 px-4 py-5 backdrop-blur-md sm:px-6">
-              <div className="mx-auto flex max-w-lg items-center justify-center gap-6">
-                <div className="flex flex-col items-center gap-2">
+              <div className="mx-auto flex w-full max-w-xl items-end">
+                <div className="min-w-0 flex-1" aria-hidden />
+                <div className="flex shrink-0 flex-col items-center gap-2">
                   <button
                     type="button"
                     onClick={() => void handleMicClick()}
@@ -673,29 +627,39 @@ function PracticeContent() {
                           : "Bật mic → nói xong → bấm gửi"}
                   </span>
                 </div>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      stopMessageAudio();
-                      setHintsOpen((v) => !v);
-                    }}
-                    className="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-400/50 bg-amber-400/15 text-amber-700 shadow-sm hover:bg-amber-400/25 dark:text-amber-300"
-                    aria-expanded={hintsOpen}
-                  >
-                    <Lightbulb className="h-6 w-6" />
-                  </button>
-                  {hintsOpen && (
-                    <div className="absolute bottom-full right-0 z-20 mb-2 w-72 max-w-[min(100vw-2rem,20rem)] rounded-2xl border border-border bg-card p-3 text-left text-sm shadow-xl">
-                      <p className="text-xs font-semibold text-muted-foreground">Gợi ý (API)</p>
-                      {hintsLoading ? (
-                        <p className="mt-2 text-muted-foreground">Đang tải…</p>
-                      ) : hintText ? (
-                        <p className="mt-2 leading-relaxed text-foreground/90">{hintText}</p>
-                      ) : (
-                        <p className="mt-2 text-muted-foreground">Chưa có gợi ý.</p>
-                      )}
-                    </div>
+                <div className="flex min-w-0 flex-1 justify-end gap-2">
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        stopMessageAudio();
+                        setHintsOpen((v) => !v);
+                      }}
+                      className="flex h-12 w-12 items-center justify-center rounded-2xl border border-amber-400/50 bg-amber-400/15 text-amber-700 shadow-sm hover:bg-amber-400/25 dark:text-amber-300"
+                      aria-expanded={hintsOpen}
+                    >
+                      <Lightbulb className="h-6 w-6" />
+                    </button>
+                    {hintsOpen && (
+                      <div className="absolute bottom-full right-0 z-20 mb-2 w-72 max-w-[min(100vw-2rem,20rem)] rounded-2xl border border-border bg-card p-3 text-left text-sm shadow-xl">
+                        <p className="text-xs font-semibold text-muted-foreground">Gợi ý (API)</p>
+                        {hintsLoading ? (
+                          <p className="mt-2 text-muted-foreground">Đang tải…</p>
+                        ) : hintText ? (
+                          <p className="mt-2 leading-relaxed text-foreground/90">{hintText}</p>
+                        ) : (
+                          <p className="mt-2 text-muted-foreground">Chưa có gợi ý.</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  {conversationId && (
+                    <PracticeModeMenu
+                      conversationId={conversationId}
+                      value={practiceMode}
+                      onChange={setPracticeMode}
+                      disabled={sending || !!redoMessage}
+                    />
                   )}
                 </div>
               </div>

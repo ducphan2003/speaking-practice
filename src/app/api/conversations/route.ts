@@ -6,6 +6,7 @@ import mongoose from 'mongoose';
 import { getUserIdFromRequest, unauthorized } from '@/lib/auth';
 import { normalizeAvatarCode } from '@/lib/conversation-avatars';
 import { normalizeGender } from '@/lib/conversation-gender';
+import { normalizePracticeMode } from '@/lib/conversation-practice-mode';
 
 export async function GET(req: Request) {
   const userId = getUserIdFromRequest(req);
@@ -109,9 +110,12 @@ export async function POST(req: Request) {
       if (t.length > 0) summary = t.slice(0, 8000);
     }
 
+    const practice_mode = normalizePracticeMode(body.practice_mode);
+
     const newConversation = await Conversation.create({
       user_id: uid,
       chat_mode,
+      practice_mode,
       sub_topic_id,
       custom_topic_name,
       active_mission_ids: [],
